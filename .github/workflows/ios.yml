@@ -1,0 +1,61 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS Runner & IPA
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Clean Local Ephemeral Files
+        run: |
+          rm -f ios/Flutter/Generated.xcconfig
+          rm -f ios/Flutter/flutter_export_environment.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Tests
+        run: flutter test
+
+      - name: Install CocoaPods & Sync Manifest
+        run: |
+          cd ios
+          pod install || pod update
+          cp -f Pods/Manifest.lock Podfile.lock || true
+          cd ..
+
+      - name: Build iOS App (No Codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package Payload into Sideloadly IPA
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r -9 CatQueens.ipa Payload
+          cd ../../..
+          ls -lh build/ios/iphoneos/CatQueens.ipa
+
+      - name: Upload iOS App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CatQueens-iOS-IPA
+          path: build/ios/iphoneos/CatQueens.ipa
+          retention-days: 14
